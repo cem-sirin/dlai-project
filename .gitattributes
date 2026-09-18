@@ -1,0 +1,4 @@
+# Preserve the official course-template files byte-for-byte.
+report/dlaiml2026.sty whitespace=-trailing-space,-space-before-tab
+report/dlaiml2026.bst whitespace=-trailing-space,-space-before-tab
+report/fancyhdr.sty whitespace=-trailing-space,-space-before-tab

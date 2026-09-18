@@ -1,0 +1,194 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[hypertexnames=false]{hyperref}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage[accepted]{dlaiml2026}
+\input{results.tex}
+
+\dlaititlerunning{Neural Game Mechanics Without Transition Targets}
+
+\begin{document}
+
+\twocolumn[
+\dlaititle{Mackerel Road: Learning Neural Game Mechanics Without Transition Targets}
+
+\begin{dlaiauthorlist}
+\dlaiauthor{Cem Sirin}{}
+\end{dlaiauthorlist}
+
+\dlaicorrespondingauthor{Cem Sirin}{sirin@diag.uniroma1.it}
+
+\vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+\begin{abstract}
+Can we learn a game's mechanics from desired behavior rather than examples of
+correct transitions? We study \emph{Mackerel Road}, a stochastic fish-delivery
+race whose local neural network defines travel costs and events. Differentiable
+planning trains this rule from objectives for viable deliveries, role balance,
+competence response, and weather, without a transition teacher. A matched
+four-stage ablation uses three optimizer seeds and 100 held-out maps per seed.
+The full model retains viable deliveries and stochastic events, but its sampled
+competence curve is steeper than the design target. Fitting a differentiable
+objective is not the same as achieving its sampled-play counterpart or human
+enjoyment.
+\end{abstract}
+
+\section{Introduction}
+
+Search-based game design optimizes content or rules using simulated
+play~\cite{togelius2011pcg,hom2007balanced}. Restricted players reveal balance
+problems~\cite{jaffe2012balance}; controlled mistakes probe competence
+response~\cite{graham2023mistakes}. The author's ongoing, unpublished
+\emph{Computational Game Quality} (CGQ) work treats this response curve as an
+evaluation object: how does a game turn degraded decisions into worse outcomes?
+Here we use such a curve as a \emph{design objective} for a neural mechanic.
+
+The network is not predicting a pre-existing game's rules: it defines the local
+transition used in play. The contribution is a course-scale test of the chain
+\emph{neural rule $\to$ differentiable player $\to$ game-level loss $\to$ held-out
+sampled play}. A constrained game grammar prevents arbitrary outcome assignment;
+a loss ablation tests which desired properties survive deployment. Code, selected
+weights, and measured results: \url{https://github.com/cem-sirin/dlai-project}.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/neural-report-overview.pdf}
+    \caption{Matched held-out hard play on the same 100 maps per model seed.
+    Base includes viability, luck, and regularization; subsequent stages add
+    balance, role specialization, then skill and weather jointly. (a) Role win
+    rates; (b) skill leverage; (c) full-model focal score versus the design target.
+    Bars and shading are population SD across three model seeds, not confidence intervals.}
+    \label{fig:results}
+\end{figure*}
+
+\section{Method}
+
+\paragraph{Game.}
+A layered route map gives light and strong porters 7--10 sequential road
+choices. Roads differ in distance, difficulty, exposure, and terrain. A visible
+cloud moves after each round and rains on incoming roads. Porters choose
+independently on the same fixed map; neither changes the other's transitions.
+Travel consumes stamina and fish freshness; exhaustion fails the delivery, and
+higher terminal freshness wins. This small setting permits full-route planning
+while retaining route trade-offs and stochastic delays (Appendix~\ref{app:game}).
+
+\paragraph{Local transition network.}
+An 8,252-parameter SiLU MLP system receives 12 local features: role, own stamina
+and freshness, cargo, road attributes, and rain. It excludes map topology,
+position, opponent, and distance to the goal, preventing direct winner control.
+Bounded heads predict time $T$, stamina loss $S$, spoilage rate $R$, event
+probabilities, and delays $\delta_k$. Difficulty gates favor strong on hard
+roads and light on easy roads. Role-blind events are no event, landslide, fallen
+tree, or cart blockage, with terrain masks. The sampled transition is
+\begin{equation}
+\begin{aligned}
+ t'&=t+T_\theta(x)+\delta_k,\\
+ a'&=[a-S_\theta(x)]_+,\\
+ f'&=f\exp[-R_\theta(x)(T_\theta(x)+\delta_k)].
+\end{aligned}
+ \label{eq:transition}
+\end{equation}
+The grammar and bounds are hand-designed; the state/road dependence within them
+is learned, not copied from transition labels.
+
+\paragraph{Differentiable player.}
+The full-map player expands road and cloud branches, continuing from the mean
+immediate event state. Softmax road choices and smooth terminal survival make
+expected delivery score differentiable. To probe competence, mix a fixed
+uncorrupted reference policy with uniform legal play:
+\begin{equation}
+ \pi_\epsilon=(1-\epsilon)\pi_0+\epsilon U,
+ \qquad \epsilon\in[0,1].
+ \label{eq:epsilon}
+\end{equation}
+Only the focal player is degraded; both role assignments are averaged. Hard
+evaluation uses argmax choices and samples corruption, clouds, and events.
+The reference is full-horizon but not an exact stochastic-game solver
+(Appendix~\ref{app:planning}).
+
+\section{Learning objective}
+
+For batches of random maps, PyTorch autograd~\cite{paszke2019pytorch} minimizes
+\begin{equation}
+\begin{aligned}
+ \min_\theta\ \mathbb E_{\mathcal B}[{}&\mathcal L_{\rm viable}+\mathcal L_{\rm balance}
+ +\mathcal L_{\rm role}+\mathcal L_{\rm skill}\\
+ &+\mathcal L_{\rm weather}+\mathcal L_{\rm luck}
+ +\mathcal L_{\rm reg}].
+\end{aligned}
+ \label{eq:objective}
+\end{equation}
+\textbf{Why these losses?} Viability uses squared hinges to reject both failed
+deliveries and cost-free perfect delivery. Balance penalizes the squared mean
+role-score gap; specialization targets advantages in both directions across
+maps, avoiding fairness by identical outcomes. Map statistics are pooled before
+these nonlinear penalties. Skill minimizes scaled squared error between a
+sigmoid comparison of expected scores and targets $(.50,.38,.27,.18,.10)$ at
+$\epsilon=(0,.25,.5,.75,1)$. This encodes rewarding good choices while preserving
+some chance for random play, not an empirically optimal enjoyment curve.
+
+Weather targets a $.025$ cloud-induced score cost so the visible cloud matters.
+Luck bounds event rate and delay variance to prevent deterministic shortcuts.
+Regularization penalizes counterintuitive local responses and large weights.
+Thus there are \emph{game-level targets}, but no \emph{transition targets}.
+Exact formulas, scales, and limitations are in Appendix~\ref{app:loss}.
+
+\section{Experiments and results}
+
+We use 64 training, 16 validation, and 100 disjoint test maps, shared across three
+optimizer seeds. Each variant starts from initialization. AdamW uses
+$\eta=.003$, weight decay $10^{-5}$, four maps per update, and at most 120
+updates on an RTX 5090. Only validation loss selects checkpoints. Equal
+competence means both players have $\epsilon=.2$; the profile degrades one
+against the uncorrupted reference. The focal score $g(\epsilon)$ is the win
+rate plus half the draw rate, not terminal freshness; skill leverage is
+$g(0)-g(1)$.
+
+Figure~\ref{fig:results} and Appendix~\ref{app:results} report the matched
+ablation. Base favors light ($\BaseLightWins$ percent wins). Balance reduces
+that bias but lowers leverage from $\BaseLeverage$ to $\BalanceLeverage$;
+adding role specialization yields equal-competence parity
+($\RoleLightWins$ percent light wins) and $\RoleLeverage$ leverage. Full does
+not dominate every metric: jointly targeting skill and weather trades away
+some of that parity.
+
+Full-model light wins are $\FullLightWins$ percent, final freshness is
+$\FullFreshness$, and leverage is $\FullLeverage$, with no observed delivery
+failures in equal-competence races. Validation cloud cost is $\FullWeather$
+(target $.025$).
+The random focal player's score is $\FullProfileEnd$, compared with the $.10$
+target. Sampled events occur on $\FullEventRate$ percent of equal-competence
+traversals. These measurements test the deployed mechanic, rather than merely
+reporting a decrease in its differentiable training loss.
+
+\section{Discussion}
+
+The result supports optimizing a constrained neural mechanic through aggregate
+play objectives without transition supervision. It does not establish human
+enjoyment, globally optimal players, or perfect attainment of every target.
+Soft training versus sampled play and finite semantic probes remain important
+limitations. Skill and weather are added jointly, so the ablation cannot isolate
+their individual effects. A stronger competence gradient also need not mean
+greater tolerance of mistakes. Appendix~\ref{app:limits} exposes per-seed
+variation, residual losses, and the surrogate--hard-play gap rather than hiding
+them behind a single aggregate score.
+
+\clearpage
+\section*{Statement on the use of AI}
+
+Hermes Agent was used as an AI-assisted tool to help write scripts, generate
+plots, and draft and edit the report. The project ideas and methodology are the
+author's. The author directed the work, reviewed all code, and remains
+responsible for the results and the submitted material.
+
+\bibliography{references.bib}
+\bibliographystyle{dlaiml2026}
+\input{appendix.tex}
+
+\end{document}
