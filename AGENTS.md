@@ -1,14 +1,19 @@
 <!-- BEGIN VALINOR UNIVERSAL POLICY -->
-<!-- valinor-policy-version: 2 -->
+<!-- valinor-policy-version: 7 -->
 
 # Universal
 
 - Let delegated agents plan their own work.
-- Solo: no worktree. Delegated: use worktree.
-- Merge verified work, then remove worktree.
-- Bounded, non-critical delegated work: prefer `gpt-5.6-luna`.
-- Browser: terminal `agent-browser` / `playwright-cli` only, fresh own session.
-- Code in `~/Code/dlai-s2-2026`, data in `~/Data/dlai-s2-2026`, work in `~/Worktrees/dlai-s2-2026/<task>`.
+- Solo work stays in the current checkout; use separate worktrees for parallel agents.
+- Single-project worktrees live under `~/Worktrees/<project>/<task>`; cross-project tasks may use `~/Space/<task>/<project-or-worktree>`.
+- Merge verified work, then remove the task worktrees and their environments/build outputs; abandoned worktrees are removed too.
+- Browser: terminal `agent-browser` / `playwright-cli` only, fresh own session. Ephemeral browser/debug artifacts such as screenshots, traces, and temporary downloads go in a per-run `/tmp/<tool>-<run-id>/` directory, never directly in `~`, a repo, `~/Worktrees`, or `~/Space`; delete the run directory on normal exit and promote only artifacts deliberately worth retaining.
+- Project development servers are transient: use `hq serve` with a hard TTL instead of creating systemd user services. Use the singleton tailnet-only `hq share` for temporary file sharing. Do not add project systemd timers as an ad-hoc scheduler; scheduled jobs belong in the future HQ scheduler.
+- Keep code under the repo's canonical `~/Code/...` path and project data under its declared `~/Data/...` root; repo-specific path declarations win.
+- If a project uses Kokolekt, first understand the current Kokolekt design and follow its current contracts and conventions. Do not impose legacy cache, snapshot, run, or storage conventions on it.
+- Valinor is working storage, not an archive. During development, prefer rebuild/redownload over preserving obsolete generated state or migrations. Prefer clean breaking changes over compatibility layers when the project does not require compatibility; fix callers forward rather than preserving dead development APIs.
+- Web/TypeScript: use Bun for installs, lockfiles and scripts, and `bun check` for plain TypeScript. Keep Svelte's `svelte-check`, Astro/Nuxt-specific validation, Vite for SvelteKit, and Wrangler for Cloudflare Workers; select deployment adapters by runtime rather than replacing framework checks with Bun's incomplete Svelte coverage.
+- Outside framework-managed storage, preserve human-authored or genuinely irreplaceable inputs and outputs. Build outputs, temporary files, caches, generated debug artifacts, and obsolete local state are disposable unless the project explicitly says otherwise.
 
 <!-- END VALINOR UNIVERSAL POLICY -->
 
